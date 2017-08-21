@@ -9,6 +9,9 @@ using System.Net;
 using System.Xml;
 using iTunesLib;
 using System.Reflection;
+using Newtonsoft.Json;
+using NeteaseLib;
+using static Newtonsoft.Json.JsonConvert;
 
 namespace iTunesConsole {
     class Program {
@@ -22,9 +25,7 @@ namespace iTunesConsole {
             var assName = new AssemblyName(args.Name).FullName;
             if (args.Name == "Interop.iTunesLib, Version=1.13.0.0, Culture=neutral, PublicKeyToken=null") {
                 //读取资源
-                using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("_Console.Resources." +
-
-      new AssemblyName(args.Name).Name + ".dll")) {
+                using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("_Console.Resources." + new AssemblyName(args.Name).Name + ".dll")) {
                     var bytes = new byte[stream.Length];
                     stream.Read(bytes, 0, (int)stream.Length);
                     return Assembly.Load(bytes);//加载资源文件中的dll,代替加载失败的程序集
@@ -32,26 +33,53 @@ namespace iTunesConsole {
             }
             throw new DllNotFoundException(assName);
         }
+
         static void Main(string[] args) {
+            var search=Netease.Search(Console.ReadLine());
+            Console.WriteLine(search);
+            int index = int.Parse(Console.ReadLine());
+            long id = search.Result.Songs[index].Id;
+            string lrc = Netease.GetLyricByID(id);
+            Console.WriteLine(lrc);
+            Console.ReadKey();
+        }
+
+        static void Main_1(string[] args) {
             AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
             //调用iTunes
             iTunesLib.IiTunes iTunes;
-            iTunes= new iTunesLib.iTunesAppClass();
+            iTunes = new iTunesLib.iTunesAppClass();
             //获取音乐信息
             string title, artist, album;
             IITFileOrCDTrack song;
 
-            song=(IITFileOrCDTrack)iTunes.CurrentTrack;
+            song = (IITFileOrCDTrack)iTunes.CurrentTrack;
             title = song.Name;
             artist = song.Artist;
             album = song.Album;
             Console.WriteLine("Song Info:");
-            Console.WriteLine("Title: "+title);
-            Console.WriteLine("Artist: "+artist);
-            Console.WriteLine("Album: "+album);
+            Console.WriteLine("Title: " + title);
+            Console.WriteLine("Artist: " + artist);
+            Console.WriteLine("Album: " + album);
             //构造搜索URL
-            string searchString = title + " " + artist + " " + album;
-            string searchURL="http://www.xiami.com/search?key=" + searchString + " &pos=1";
+            int i = Convert.ToInt32(Console.ReadLine());
+            string searchString = "";
+            switch (i) {
+                case 1:
+                    searchString = title;
+                    break;
+                case 2:
+                    searchString = title + " " + artist;
+                    break;
+                case 3:
+                    searchString = title + " " + album;
+                    break;
+                default:
+                    searchString = title + " " + artist + " " + album;
+                    break;
+            }
+
+            string searchURL = "http://music.163.com/api/serach/pc";
             WebClient wClient = new WebClient();
             byte[] buffer;
             //请求页面
@@ -60,14 +88,14 @@ namespace iTunesConsole {
             System.Text.UTF8Encoding converter = new System.Text.UTF8Encoding();
             string response = converter.GetString(buffer);
             string[] separators = new string[] { "<h5>歌曲</h5>" };
-            string[] sp = response.Split(separators,StringSplitOptions.RemoveEmptyEntries);
+            string[] sp = response.Split(separators, StringSplitOptions.RemoveEmptyEntries);
             response = sp[1];
-            separators=new string[]{"http://www.xiami.com/song/"};
-            sp = response.Split(separators,StringSplitOptions.RemoveEmptyEntries);
+            separators = new string[] { "http://www.xiami.com/song/" };
+            sp = response.Split(separators, StringSplitOptions.RemoveEmptyEntries);
             response = sp[1];
             //得到歌曲ID
             string song_id = response.Substring(0, response.IndexOf("\""));
-            Console.WriteLine("Get Song ID: "+song_id);
+            Console.WriteLine("Get Song ID: " + song_id);
             //根据ID请求详细信息
             string xmlURL = "http://www.xiami.com/song/playlist/id/" + song_id + "/object_name/default/object_id/0/cat/xml";
             buffer = wClient.DownloadData(xmlURL);
@@ -81,7 +109,84 @@ namespace iTunesConsole {
             XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
             nsmgr.AddNamespace("ns", "http://xspf.org/ns/0/");
             XmlNodeList listNodes = null;
-            listNodes = root.SelectNodes("/ns:playlist/ns:trackList/ns:track/ns:lyric_url",nsmgr);
+            listNodes = root.SelectNodes("/ns:playlist/ns:trackList/ns:track/ns:lyric_url", nsmgr);
+            foreach (XmlNode node in listNodes) {
+                Console.WriteLine(node.InnerText);
+                try {
+                    wClient.DownloadFile(node.InnerText, song.Location.Substring(0, song.Location.LastIndexOf(".")) + ".lrc");
+                }
+                catch (System.Exception ex) {
+                    Console.WriteLine(ex.Message);
+                }
+            }
+        }
+
+        static void Main_OLD(string[] args) {
+            AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
+            //调用iTunes
+            iTunesLib.IiTunes iTunes;
+            iTunes = new iTunesLib.iTunesAppClass();
+            //获取音乐信息
+            string title, artist, album;
+            IITFileOrCDTrack song;
+
+            song = (IITFileOrCDTrack)iTunes.CurrentTrack;
+            title = song.Name;
+            artist = song.Artist;
+            album = song.Album;
+            Console.WriteLine("Song Info:");
+            Console.WriteLine("Title: " + title);
+            Console.WriteLine("Artist: " + artist);
+            Console.WriteLine("Album: " + album);
+            //构造搜索URL
+            int i = Convert.ToInt32(Console.ReadLine());
+            string searchString = "";
+            switch (i) {
+                case 1:
+                    searchString = title;
+                    break;
+                case 2:
+                    searchString = title + " " + artist;
+                    break;
+                case 3:
+                    searchString = title + " " + album;
+                    break;
+                default:
+                    searchString = title + " " + artist + " " + album;
+                    break;
+            }
+
+            string searchURL = "http://www.xiami.com/search?key=" + searchString + " &pos=1";
+            WebClient wClient = new WebClient();
+            byte[] buffer;
+            //请求页面
+            buffer = wClient.DownloadData(searchURL);
+            //转化成字符串，从中获取匹配度最高的歌曲id
+            System.Text.UTF8Encoding converter = new System.Text.UTF8Encoding();
+            string response = converter.GetString(buffer);
+            string[] separators = new string[] { "<h5>歌曲</h5>" };
+            string[] sp = response.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+            response = sp[1];
+            separators = new string[] { "http://www.xiami.com/song/" };
+            sp = response.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+            response = sp[1];
+            //得到歌曲ID
+            string song_id = response.Substring(0, response.IndexOf("\""));
+            Console.WriteLine("Get Song ID: " + song_id);
+            //根据ID请求详细信息
+            string xmlURL = "http://www.xiami.com/song/playlist/id/" + song_id + "/object_name/default/object_id/0/cat/xml";
+            buffer = wClient.DownloadData(xmlURL);
+            if (buffer.Count() < 10)
+                throw new System.Exception("该歌曲没有相关信息，可能已被下架");
+            string xml = converter.GetString(buffer);
+            XmlDocument doc = new XmlDocument();
+            doc.LoadXml(xml);
+            XmlElement root = null;
+            root = doc.DocumentElement;
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(doc.NameTable);
+            nsmgr.AddNamespace("ns", "http://xspf.org/ns/0/");
+            XmlNodeList listNodes = null;
+            listNodes = root.SelectNodes("/ns:playlist/ns:trackList/ns:track/ns:lyric_url", nsmgr);
             foreach (XmlNode node in listNodes) {
                 Console.WriteLine(node.InnerText);
                 try {
